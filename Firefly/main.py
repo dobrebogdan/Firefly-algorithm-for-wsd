@@ -1,3 +1,6 @@
+# TODO: IC error
+# TODO: Index usage in local search
+
 import nltk
 import random
 nltk.download('brown')
@@ -23,10 +26,6 @@ ALPHA = 0.2
 GAMMA = 1
 CORPUS = semcor
 CORPUS_IC = wordnet_ic.ic(f'./ic-semcor.dat')
-dog = wn.synset('dog.n.01')
-cat = wn.synset('cat.n.01')
-print(dog.name())
-print(wn.synsets('like'))
 
 # Local search parameters
 LR = 0.15
@@ -89,7 +88,12 @@ def IC(synset1, synset2):
 
 
 def synset_sense_score(synset1, synset2):
-    return extended_lesk_score(synset1, synset2) + IC(synset1, synset2)
+    ic_score = 0.0
+    try:
+        ic_score = IC(synset1, synset2)
+    except:
+        pass
+    return extended_lesk_score(synset1, synset2) + ic_score
 
 
 def sentence_sense_score(synsets):
@@ -112,7 +116,10 @@ def sentence_to_coords(synsets, words):
 
 
 def coord_to_synset(coord, word):
-    return wn.synset(word)[coord]
+    if coord < 0:
+        coord *= -1
+    coord = int(coord)
+    return wn.synsets(word)[coord]
 
 
 def coords_to_sentence(coords, words):
@@ -124,7 +131,7 @@ def find_brightness(firefly_synsets, firefly_intensities):
 
 
 def move_fireflies(fireflies, firefly_intensities, words):
-    coords = np.array(sentence_to_coords(fireflies, words))
+    coords = np.array([sentence_to_coords(firefly, words) for firefly in fireflies])
     for i in range(0, len(coords)):
         for j in range(0, len(coords)):
             if i != j:
@@ -132,17 +139,34 @@ def move_fireflies(fireflies, firefly_intensities, words):
                     r = distance.euclidean(coords[i], coords[j])
                     beta_r = 1.0 * firefly_intensities[j] * (E ** (-GAMMA * r * r))
                     coords[i] = coords[i] + beta_r * (coords[j] - coords[i]) + ALPHA * (random.uniform(0, 1) - 0.5)
-    fireflies = coords_to_sentence(coords, words)
+
+    fireflies = [coords_to_sentence(coord, words) for coord in coords]
     return fireflies
 
 
 
 def local_search(initial_firefly, initial_firefly_intensity, words):
     firefly_list = [(initial_firefly_intensity, initial_firefly)]
-    for _ in range(0, MAX_CYCLES):
+    for x in range(0, MAX_CYCLES):
+        print(x)
+        current_firefly = initial_firefly.copy()
         idx1 = random.randint(0, len(words) - 1)
         idx2 = random.randint(0, len(words) - 1)
         idx1_synsets = wn.synsets(words[idx1])
+        idx2_synsets = wn.synsets(words[idx2])
+        idx1_pos = random.randint(0, len(idx1_synsets) - 1)
+        idx2_pos = random.randint(0, len(idx2_synsets) - 1)
+        current_firefly[idx1] = idx1_synsets[idx1_pos]
+        current_firefly[idx2] = idx2_synsets[idx2_pos]
+        current_firefly_intensity = sentence_sense_score(current_firefly)
+        if current_firefly_intensity > firefly_list[0][0]:
+            new_firefly_list = [(current_firefly_intensity, current_firefly)]
+            new_firefly_list.extend(firefly_list)
+            new_firefly_list.pop()
+            firefly_list = new_firefly_list
+        else:
+            if len(firefly_list) < L_FA:
+                firefly_list.append((initial_firefly_intensity, initial_firefly))
     return firefly_list[0]
 
 
@@ -153,7 +177,9 @@ def local_search(initial_firefly, initial_firefly_intensity, words):
 sentences = CORPUS.sents()
 total_tokens_nr = 0
 covered_tokens_nr = 0
+sentence_no = 0
 for sentence in sentences[:1]:
+    sentence_no += 1
     tokens = clean_and_tokenize(' '.join(sentence))
     total_tokens_nr += len(tokens)
     tokens = [token for token in tokens if len(wn.synsets(token)) > 0]
@@ -175,16 +201,19 @@ for sentence in sentences[:1]:
     global_best_firefly = fireflies[0]
     global_best_intensity = firefly_intensities[0]
     # Start iterations
-    for _ in range(0, MAX_ITER):
+    for iter_no in range(0, MAX_ITER):
+        print(f'Iteration number: {iter_no}')
         fireflies = move_fireflies(fireflies, firefly_intensities, words)
         firefly_intensities = [sentence_sense_score(firefly) for firefly in fireflies]
         intensities_and_positions = zip(firefly_intensities, fireflies)
         (top_intensity, top_firefly) = sorted(intensities_and_positions, reverse=True)[0]
-        (best_firefly, best_intensity) = local_search(top_firefly, top_intensity, words)
+        print(f'Before local search')
+        (best_intensity, best_firefly) = local_search(top_firefly, top_intensity, words)
+        print(f'After local search')
         if best_intensity > global_best_intensity:
             global_best_intensity = best_intensity
             global_best_firefly = best_firefly
 
-
-    print(fireflies)
+    print(f'RESULTS FOR SENTENCE {sentence_no}')
     print(global_best_firefly)
+    print(words)
