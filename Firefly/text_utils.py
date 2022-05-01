@@ -24,7 +24,7 @@ def clean_and_tokenize(text):
 
 def phrase_contains(tokens1, tokens2):
     found_phrase = False
-    for i in range(0, len(tokens1) - len(tokens2)):
+    for i in range(0, len(tokens1) - len(tokens2) + 1):
         is_equal = True
         for j in range(0, len(tokens2)):
             if tokens1[i+j] != tokens2[j]:

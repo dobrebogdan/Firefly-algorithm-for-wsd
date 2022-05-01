@@ -1,6 +1,7 @@
 # TODO: Index usage in local search
 # TODO: Decide on the good lesk implementation
 # TODO: Evaluate on all 3 corpuses
+# TODO: Bugfixes
 
 import nltk
 import random
@@ -8,7 +9,7 @@ nltk.download('brown')
 nltk.download('semcor')
 nltk.download('senseval')
 nltk.download('wordnet_ic')
-from nltk.stem import PorterStemmer
+from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.corpus import wordnet as wn, wordnet_ic
 from nltk.corpus import semcor, senseval
 from text_utils import clean_and_tokenize, phrase_replace, phrase_contains
@@ -35,6 +36,7 @@ L_FA = 17000
 MAX_CYCLES = 30000
 
 ps = PorterStemmer()
+wl = WordNetLemmatizer()
 
 # Code
 
@@ -72,7 +74,7 @@ def overlap_score(synset1, synset2):
 
     for candidate_phrase in candidate_phrases:
         if phrase_contains(tokens1, candidate_phrase) and phrase_contains(tokens2, candidate_phrase):
-            score += len(candidate_phrase) * len(candidate_phrases)
+            score += len(candidate_phrase) * len(candidate_phrase)
             tokens1 = phrase_replace(tokens1, candidate_phrase)
             tokens2 = phrase_replace(tokens2, candidate_phrase)
     return score
@@ -86,11 +88,6 @@ def extended_lesk_score(synset1, synset2):
         for context_synset2 in context2:
             score += overlap_score(context_synset1, context_synset2)
     return score
-
-
-print('Test')
-print(extended_lesk_score(wn.synset('dog.n.01'), wn.synset('cat.n.01')))
-print(extended_lesk_score(wn.synset('friday.n.01'), wn.synset('allege.v.01')))
 
 
 def IC(synset1, synset2):
@@ -136,8 +133,6 @@ def coords_to_sentence(coords, words):
     return [coord_to_synset(coord, word) for (coord, word) in zip(coords, words)]
 
 
-def find_brightness(firefly_synsets, firefly_intensities):
-    return firefly_synsets
 
 
 def move_fireflies(fireflies, firefly_intensities, words):
