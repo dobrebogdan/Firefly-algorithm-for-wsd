@@ -1,5 +1,6 @@
-# TODO: IC error
 # TODO: Index usage in local search
+# TODO: Decide on the good lesk implementation
+# TODO: Evaluate on all 3 corpuses
 
 import nltk
 import random
@@ -7,6 +8,7 @@ nltk.download('brown')
 nltk.download('semcor')
 nltk.download('senseval')
 nltk.download('wordnet_ic')
+from nltk.stem import PorterStemmer
 from nltk.corpus import wordnet as wn, wordnet_ic
 from nltk.corpus import semcor, senseval
 from text_utils import clean_and_tokenize, phrase_replace, phrase_contains
@@ -32,6 +34,7 @@ LR = 0.15
 L_FA = 17000
 MAX_CYCLES = 30000
 
+ps = PorterStemmer()
 
 # Code
 
@@ -57,19 +60,21 @@ def overlap_score(synset1, synset2):
     gloss2 = synset2.definition()
     tokens1 = clean_and_tokenize(gloss1)
     tokens2 = clean_and_tokenize(gloss2)
+    tokens1 = [ps.stem(token) for token in tokens1]
+    tokens2 = [ps.stem(token) for token in tokens2]
     candidate_phrases = []
 
     # Since we are looking for common phrases, considering just the ones in gloss1 as candidates is enough
-    for size in range(len(tokens1), 1, -1):
-        for i in range(0, len(tokens1) - size):
+    for size in range(len(tokens1), 0, -1):
+        for i in range(0, len(tokens1) - size + 1):
             candidate_phrase = tokens1[i:(i+size)]
             candidate_phrases.append(candidate_phrase)
 
     for candidate_phrase in candidate_phrases:
-        if phrase_contains(tokens1, candidate_phrase) and phrase_contains(tokens2, candidate_phrases):
+        if phrase_contains(tokens1, candidate_phrase) and phrase_contains(tokens2, candidate_phrase):
             score += len(candidate_phrase) * len(candidate_phrases)
             tokens1 = phrase_replace(tokens1, candidate_phrase)
-            tokens2 = phrase_replace(tokens2, candidate_phrases)
+            tokens2 = phrase_replace(tokens2, candidate_phrase)
     return score
 
 
@@ -81,6 +86,11 @@ def extended_lesk_score(synset1, synset2):
         for context_synset2 in context2:
             score += overlap_score(context_synset1, context_synset2)
     return score
+
+
+print('Test')
+print(extended_lesk_score(wn.synset('dog.n.01'), wn.synset('cat.n.01')))
+print(extended_lesk_score(wn.synset('friday.n.01'), wn.synset('allege.v.01')))
 
 
 def IC(synset1, synset2):
