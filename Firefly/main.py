@@ -162,10 +162,13 @@ def sentence_to_coords(synsets, words):
 
 
 def coord_to_synset(coord, word):
+    word_synsets = wn.synsets(word)
     if coord < 0:
         coord *= -1
     coord = int(coord)
-    return wn.synsets(word)[coord]
+    if coord >= len(word_synsets):
+        coord = len(word_synsets) - 1
+    return word_synsets[coord]
 
 
 def coords_to_sentence(coords, words):
