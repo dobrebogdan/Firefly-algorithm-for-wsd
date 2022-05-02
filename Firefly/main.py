@@ -1,7 +1,7 @@
 # TODO: Index usage in local search
 # TODO: Decide on the good lesk implementation
-# TODO: Evaluate on all 3 corpuses
-# TODO: Bugfixes
+# TODO: Evaluate on all 3 corpuses if possible
+# TODO: Bugfixes + performance issues
 
 import nltk
 import random
@@ -19,12 +19,11 @@ from scipy.spatial import distance
 import numpy as np
 import xml.etree.ElementTree as ET
 
-
 # Constants
 
 W = 5
 # HFA parameters
-SWARM_SIZE = 40
+SWARM_SIZE = 100
 E = 2.72
 MAX_ITER = 3
 ALPHA = 0.2
@@ -35,7 +34,7 @@ CORPUS_IC = wordnet_ic.ic(f'./ic-semcor.dat')
 # Local search parameters
 LR = 0.15
 L_FA = 17000
-MAX_CYCLES = 3
+MAX_CYCLES = 30000
 
 ps = PorterStemmer()
 wl = WordNetLemmatizer()
@@ -49,7 +48,7 @@ covered_tokens = 0
 total_tokens = 0
 
 
-xml_files = [f for f in listdir(semcor_path) if isfile(join(semcor_path, f))]
+xml_files = sorted([f for f in listdir(semcor_path) if isfile(join(semcor_path, f))])[:1]
 for xml_file in xml_files:
     tree = ET.parse(f'{semcor_path}/{xml_file}')
     root = tree.getroot()[0]
@@ -68,7 +67,7 @@ for xml_file in xml_files:
                             if len(wn.synsets(word)) <= wnsn_pos:
                                 continue
                             firefly.append(wn.synsets(word)[wnsn_pos])
-                            sentence.append(wf_tag.text)
+                            sentence.append(word)
                 except:
                     pass
 
@@ -166,16 +165,11 @@ def coord_to_synset(coord, word):
     if coord < 0:
         coord *= -1
     coord = int(coord)
-    # TODO: Fix this, it shouldn't happen
-    if coord >= len(wn.synsets(word)):
-        coord = 0
     return wn.synsets(word)[coord]
 
 
 def coords_to_sentence(coords, words):
     return [coord_to_synset(coord, word) for (coord, word) in zip(coords, words)]
-
-
 
 
 def move_fireflies(fireflies, firefly_intensities, words):
@@ -220,10 +214,16 @@ def local_search(initial_firefly, initial_firefly_intensity, words):
 # Creating a synset frequencies dictionary for the corpus to calculate IC
 
 
+print(f'COVERAGE:{covered_tokens / total_tokens}')
 # Getting and parsing sents
 total_tokens_nr = 0
 covered_tokens_nr = 0
 sentence_no = 0
+
+tp = 0
+fp = 0
+tn = 0
+fn = 0
 for sentence in sentences[:4]:
     sentence_no += 1
     tokens = sentence
@@ -256,7 +256,22 @@ for sentence in sentences[:4]:
             global_best_intensity = best_intensity
             global_best_firefly = best_firefly
 
+    true_firefly = true_fireflies[sentence_no-1]
     print(f'RESULTS FOR SENTENCE {sentence_no}')
     print(global_best_firefly)
-    print(true_fireflies[sentence_no-1])
+    print(true_firefly)
     print(tokens)
+
+    for i in range(0, len(true_firefly)):
+        if true_firefly[i] == global_best_firefly[i]:
+            tp += 1
+            tn += len(wn.synsets(tokens[i])) - 1
+        else:
+            fp += 1
+            fn += 1
+            tn += len(wn.synsets(tokens[i])) - 1
+
+precision = tp / (tp + fp)
+recall = tp / (tp + fn)
+f1_score = (2 * precision * recall) / (precision + recall)
+print(f"Precision: {precision}\nRecall: {recall}\nF1 Score: {f1_score}")
