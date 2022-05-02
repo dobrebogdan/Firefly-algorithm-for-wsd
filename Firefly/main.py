@@ -5,6 +5,8 @@
 
 import nltk
 import random
+from os import listdir
+from os.path import isfile, join
 nltk.download('brown')
 nltk.download('semcor')
 nltk.download('senseval')
@@ -12,10 +14,10 @@ nltk.download('wordnet_ic')
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.corpus import wordnet as wn, wordnet_ic
 from nltk.corpus import semcor, senseval
-from text_utils import clean_and_tokenize, phrase_replace, phrase_contains
+from text_utils import clean_text, clean_and_tokenize, phrase_replace, phrase_contains
 from scipy.spatial import distance
 import numpy as np
-import sys
+import xml.etree.ElementTree as ET
 
 
 # Constants
@@ -24,7 +26,7 @@ W = 5
 # HFA parameters
 SWARM_SIZE = 40
 E = 2.72
-MAX_ITER = 100
+MAX_ITER = 3
 ALPHA = 0.2
 GAMMA = 1
 CORPUS = semcor
@@ -33,12 +35,50 @@ CORPUS_IC = wordnet_ic.ic(f'./ic-semcor.dat')
 # Local search parameters
 LR = 0.15
 L_FA = 17000
-MAX_CYCLES = 30000
+MAX_CYCLES = 3
 
 ps = PorterStemmer()
 wl = WordNetLemmatizer()
 
-# Code
+# Reading
+semcor_path = '../../semcor/data'
+
+sentences = []
+true_fireflies = []
+covered_tokens = 0
+total_tokens = 0
+
+
+xml_files = [f for f in listdir(semcor_path) if isfile(join(semcor_path, f))]
+for xml_file in xml_files:
+    tree = ET.parse(f'{semcor_path}/{xml_file}')
+    root = tree.getroot()[0]
+    for paragraph_tag in root:
+        for sentence_tag in paragraph_tag:
+            sentence = []
+            firefly = []
+            for wf_tag in sentence_tag:
+                total_tokens += 1
+                try:
+                    if ('wnsn' in wf_tag.attrib.keys()) and int(wf_tag.attrib['wnsn']) != 0:
+                        covered_tokens += 1
+                        wnsn_pos = int(wf_tag.attrib['wnsn']) - 1
+                        words = clean_text(wf_tag.text).split(' ')
+                        for word in words:
+                            if len(wn.synsets(word)) <= wnsn_pos:
+                                continue
+                            firefly.append(wn.synsets(word)[wnsn_pos])
+                            sentence.append(wf_tag.text)
+                except:
+                    pass
+
+            sentences.append(sentence)
+            true_fireflies.append(firefly)
+
+
+print(sentences[:2])
+
+# Algorithm
 
 def get_context(curr_synset):
     context = [curr_synset]
@@ -126,6 +166,9 @@ def coord_to_synset(coord, word):
     if coord < 0:
         coord *= -1
     coord = int(coord)
+    # TODO: Fix this, it shouldn't happen
+    if coord >= len(wn.synsets(word)):
+        coord = 0
     return wn.synsets(word)[coord]
 
 
@@ -153,7 +196,6 @@ def move_fireflies(fireflies, firefly_intensities, words):
 def local_search(initial_firefly, initial_firefly_intensity, words):
     firefly_list = [(initial_firefly_intensity, initial_firefly)]
     for x in range(0, MAX_CYCLES):
-        print(x)
         current_firefly = initial_firefly.copy()
         idx1 = random.randint(0, len(words) - 1)
         idx2 = random.randint(0, len(words) - 1)
@@ -179,17 +221,12 @@ def local_search(initial_firefly, initial_firefly_intensity, words):
 
 
 # Getting and parsing sents
-sentences = CORPUS.sents()
 total_tokens_nr = 0
 covered_tokens_nr = 0
 sentence_no = 0
-for sentence in sentences[:1]:
+for sentence in sentences[:4]:
     sentence_no += 1
-    tokens = clean_and_tokenize(' '.join(sentence))
-    total_tokens_nr += len(tokens)
-    tokens = [token for token in tokens if len(wn.synsets(token)) > 0]
-    covered_tokens_nr += len(tokens)
-    words = tokens
+    tokens = sentence
     synsets_for_tokens = [wn.synsets(token) for token in tokens]
 
     # Deploy swarm of fireflies
@@ -208,12 +245,12 @@ for sentence in sentences[:1]:
     # Start iterations
     for iter_no in range(0, MAX_ITER):
         print(f'Iteration number: {iter_no}')
-        fireflies = move_fireflies(fireflies, firefly_intensities, words)
+        fireflies = move_fireflies(fireflies, firefly_intensities, tokens)
         firefly_intensities = [sentence_sense_score(firefly) for firefly in fireflies]
         intensities_and_positions = zip(firefly_intensities, fireflies)
         (top_intensity, top_firefly) = sorted(intensities_and_positions, reverse=True)[0]
         print(f'Before local search')
-        (best_intensity, best_firefly) = local_search(top_firefly, top_intensity, words)
+        (best_intensity, best_firefly) = local_search(top_firefly, top_intensity, tokens)
         print(f'After local search')
         if best_intensity > global_best_intensity:
             global_best_intensity = best_intensity
@@ -221,4 +258,5 @@ for sentence in sentences[:1]:
 
     print(f'RESULTS FOR SENTENCE {sentence_no}')
     print(global_best_firefly)
-    print(words)
+    print(true_fireflies[sentence_no-1])
+    print(tokens)
