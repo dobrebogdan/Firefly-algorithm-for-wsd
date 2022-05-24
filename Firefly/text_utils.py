@@ -5,8 +5,9 @@ STOPWORDS = stopwords.words('english')
 def clean_text(text):
     text = text.lower()
     for char in text:
-        if (not char.isalpha()) and not (char == ' '):
+        if (not char.isalpha()) and not (char == ' ' or char == '_' or char == '-'):
             text = text.replace(char, ' ')
+    text = text.replace('_', '-')
     return text
 
 

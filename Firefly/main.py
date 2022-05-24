@@ -1,8 +1,4 @@
-# TODO: Index usage in local search
-# TODO: Decide on the good lesk implementation
-# TODO: Evaluate on all 3 corpuses if possible
-# TODO: Bugfixes + performance issues
-
+import csv
 import nltk
 import random
 from os import listdir
@@ -15,12 +11,12 @@ from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.corpus import wordnet as wn, wordnet_ic
 from nltk.corpus import semcor, senseval
 from text_utils import clean_text, clean_and_tokenize, phrase_replace, phrase_contains
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from scipy.spatial import distance
 import numpy as np
 import xml.etree.ElementTree as ET
 
 # Constants
-
 W = 5
 # HFA parameters
 SWARM_SIZE = 100
@@ -33,50 +29,103 @@ CORPUS_IC = wordnet_ic.ic(f'./ic-semcor.dat')
 
 # Local search parameters
 LR = 0.15
-L_FA = 17000
-MAX_CYCLES = 30000
+L_FA = 5
+MAX_CYCLES = 5
 
 ps = PorterStemmer()
 wl = WordNetLemmatizer()
 
 # Reading
-semcor_path = '../../semcor/data'
+corpus_path = '../data/semcor'
+corpus_name = 'semcor'
+semcor_path = '../data/semcor'
+
+dict_keys = {}
+if corpus_path != semcor_path:
+    with open(f'{corpus_path}/{corpus_name}.gold.key.txt', 'r') as file:
+        tsv_file = csv.reader(file, delimiter=" ")
+        for row in tsv_file:
+            dict_keys[row[0]] = row[1]
+
 
 sentences = []
 true_fireflies = []
 covered_tokens = 0
 total_tokens = 0
 
+def read_from_semcor():
+    global sentences, true_fireflies, covered_tokens, total_tokens
+    xml_files = sorted([f for f in listdir(corpus_path) if isfile(join(corpus_path, f))])[:4]
+    for xml_file in xml_files:
+        tree = ET.parse(f'{corpus_path}/{xml_file}')
+        root = tree.getroot()[0]
+        for paragraph_tag in root:
+            for sentence_tag in paragraph_tag:
+                sentence = []
+                firefly = []
+                for wf_tag in sentence_tag:
+                    total_tokens += 1
+                    try:
+                        if ('wnsn' in wf_tag.attrib.keys()) and int(wf_tag.attrib['wnsn']) != 0:
+                            covered_tokens += 1
+                            wnsn_pos = int(wf_tag.attrib['wnsn']) - 1
+                            words = clean_text(wf_tag.text).split('-')
+                            if len(words) == 1:
+                                word = words[0]
+                                if len(wn.synsets(word)) <= wnsn_pos:
+                                    continue
+                                firefly.append(wn.synsets(word)[wnsn_pos])
+                                sentence.append(word)
+                    except:
+                        pass
 
-xml_files = sorted([f for f in listdir(semcor_path) if isfile(join(semcor_path, f))])[:1]
-for xml_file in xml_files:
-    tree = ET.parse(f'{semcor_path}/{xml_file}')
-    root = tree.getroot()[0]
-    for paragraph_tag in root:
-        for sentence_tag in paragraph_tag:
-            sentence = []
-            firefly = []
-            for wf_tag in sentence_tag:
-                total_tokens += 1
-                try:
-                    if ('wnsn' in wf_tag.attrib.keys()) and int(wf_tag.attrib['wnsn']) != 0:
+                sentences.append(sentence)
+                true_fireflies.append(firefly)
+
+
+def get_sense(tag):
+    global dict_keys
+    return wn.lemma_from_key(dict_keys[tag]).synset()
+
+def get_sense_number(tag, sense):
+    global dict_keys
+    list_senses = wn.synsets(wn.lemma_from_key(dict_keys[tag]).name())
+    for i in range(len(list_senses)):
+        if list_senses[i] == sense:
+            return i
+    return -1
+
+def read_from_regular_corpus():
+    global sentences, true_fireflies, covered_tokens, total_tokens
+    tree = ET.parse(f'{corpus_path}/{corpus_name}.data.xml')
+    root = tree.getroot()
+    for text in root:
+        for sentence_tag in text:
+            try:
+                sentence = []
+                firefly = []
+                for instance_tag in sentence_tag:
+                    total_tokens += 1
+                    if 'id' in instance_tag.attrib.keys():
                         covered_tokens += 1
-                        wnsn_pos = int(wf_tag.attrib['wnsn']) - 1
-                        words = clean_text(wf_tag.text).split(' ')
-                        for word in words:
-                            if len(wn.synsets(word)) <= wnsn_pos:
-                                continue
-                            firefly.append(wn.synsets(word)[wnsn_pos])
-                            sentence.append(word)
-                except:
-                    pass
+                        words_list = instance_tag.text.split('-')
+                        tag = instance_tag.attrib['id']
+                        if len(words_list) == 1:
+                            tag_sense = get_sense(tag)
+                            sense_number = get_sense_number(tag, tag_sense)
+                            name = wn.lemma_from_key(dict_keys[tag]).name()
+                            firefly.append(wn.synsets(name)[sense_number])
+                            sentence.append(name)
+                sentences.append(sentence)
+                true_fireflies.append(firefly)
+            except:
+                pass
 
-            sentences.append(sentence)
-            true_fireflies.append(firefly)
 
-
-print(sentences[:2])
-
+if semcor_path == corpus_path:
+    read_from_semcor()
+else:
+    read_from_regular_corpus()
 # Algorithm
 
 def get_context(curr_synset):
@@ -193,6 +242,7 @@ def move_fireflies(fireflies, firefly_intensities, words):
 def local_search(initial_firefly, initial_firefly_intensity, words):
     firefly_list = [(initial_firefly_intensity, initial_firefly)]
     for x in range(0, MAX_CYCLES):
+        print(f'Cycle: {x}')
         current_firefly = initial_firefly.copy()
         idx1 = random.randint(0, len(words) - 1)
         idx2 = random.randint(0, len(words) - 1)
@@ -223,11 +273,10 @@ total_tokens_nr = 0
 covered_tokens_nr = 0
 sentence_no = 0
 
-tp = 0
-fp = 0
-tn = 0
-fn = 0
-for sentence in sentences[:4]:
+sentences = sentences[:4]
+all_true_senses = []
+all_pred_senses = []
+for sentence in sentences:
     sentence_no += 1
     tokens = sentence
     synsets_for_tokens = [wn.synsets(token) for token in tokens]
@@ -260,21 +309,13 @@ for sentence in sentences[:4]:
             global_best_firefly = best_firefly
 
     true_firefly = true_fireflies[sentence_no-1]
-    print(f'RESULTS FOR SENTENCE {sentence_no}')
-    print(global_best_firefly)
-    print(true_firefly)
-    print(tokens)
-
+    print(f'FINISHED FOR SENTENCE {sentence_no}')
     for i in range(0, len(true_firefly)):
-        if true_firefly[i] == global_best_firefly[i]:
-            tp += 1
-            tn += len(wn.synsets(tokens[i])) - 1
-        else:
-            fp += 1
-            fn += 1
-            tn += len(wn.synsets(tokens[i])) - 1
+        all_true_senses.append(true_firefly[i].name())
+        all_pred_senses.append(global_best_firefly[i].name())
 
-precision = tp / (tp + fp)
-recall = tp / (tp + fn)
-f1_score = (2 * precision * recall) / (precision + recall)
-print(f"Precision: {precision}\nRecall: {recall}\nF1 Score: {f1_score}")
+
+print(f"Accuracy: {accuracy_score(all_true_senses, all_pred_senses)}\n"
+      f"Precision: {precision_score(all_true_senses, all_pred_senses, average='micro')}\n"
+      f"Recall: {recall_score(all_true_senses, all_pred_senses, average='micro')}\n"
+      f"F1 Score: {f1_score(all_true_senses, all_pred_senses, average='micro')}\n")
