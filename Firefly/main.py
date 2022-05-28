@@ -3,28 +3,23 @@ import nltk
 import random
 from os import listdir
 from os.path import isfile, join
-nltk.download('brown')
-nltk.download('semcor')
-nltk.download('senseval')
 nltk.download('wordnet_ic')
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.corpus import wordnet as wn, wordnet_ic
-from nltk.corpus import semcor, senseval
 from text_utils import clean_text, clean_and_tokenize, phrase_replace, phrase_contains
-from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
+from sklearn.metrics import precision_score
 from scipy.spatial import distance
 import numpy as np
 import xml.etree.ElementTree as ET
 
 # Constants
 W = 5
-# HFA parameters
+# HFA parameters (local search)
 SWARM_SIZE = 100
 E = 2.72
 MAX_ITER = 3
 ALPHA = 0.2
 GAMMA = 1
-CORPUS = semcor
 CORPUS_IC = wordnet_ic.ic(f'./ic-semcor.dat')
 
 # Local search parameters
@@ -35,9 +30,12 @@ MAX_CYCLES = 5
 ps = PorterStemmer()
 wl = WordNetLemmatizer()
 
-# Reading
-corpus_path = '../data/semcor'
-corpus_name = 'semcor'
+# Reading from corpuses. Corpuses that can be used: semeval2007, semeval2013, semeval2015, senseval2, senseval3, semcor.
+# Semcor has a different format than the others, so there is a different function for it.
+
+
+corpus_path = '../data/semeval2015'
+corpus_name = 'semeval2015'
 semcor_path = '../data/semcor'
 
 dict_keys = {}
@@ -126,6 +124,7 @@ if semcor_path == corpus_path:
     read_from_semcor()
 else:
     read_from_regular_corpus()
+
 # Algorithm
 
 def get_context(curr_synset):
@@ -315,7 +314,5 @@ for sentence in sentences:
         all_pred_senses.append(global_best_firefly[i].name())
 
 
-print(f"Accuracy: {accuracy_score(all_true_senses, all_pred_senses)}\n"
-      f"Precision: {precision_score(all_true_senses, all_pred_senses, average='micro')}\n"
-      f"Recall: {recall_score(all_true_senses, all_pred_senses, average='micro')}\n"
-      f"F1 Score: {f1_score(all_true_senses, all_pred_senses, average='micro')}\n")
+print(f"Precision: {precision_score(all_true_senses, all_pred_senses, average='micro')}\n")
+
